@@ -968,8 +968,19 @@ export default function App() {
              <h2 className={`font-mono text-xl ${colors.secondary}`}>// MISSION_LOGS: DEPLOYED_SOLUTIONS</h2>
              <div className={`h-px w-12 ${theme === 'dark' && !isMatrixMode ? 'bg-orange-500' : isMatrixMode ? 'bg-[#00FF00]' : 'bg-orange-700'}`}></div>
           </div>
-          {githubError && (
-            <div className="max-w-7xl mx-auto px-6 mb-6 text-sm text-red-400 font-mono">GitHub fetch error: {githubError}. Ensure <code>GITHUB_TOKEN</code> is set and the server (`npm run start:server`) is running.</div>
+          {githubError && !(githubData?.pinned?.length || githubData?.recent?.length || githubData?.contributions?.length) && (
+            <div className="max-w-7xl mx-auto px-6 mb-6 text-sm text-red-400 font-mono flex items-center gap-4">
+              <div>GitHub fetch error: {githubError}. Ensure <code>GITHUB_TOKEN</code> is set and the server (`npm run start:server`) is running.</div>
+              <button className={`px-2 py-1 rounded bg-cyan-700 text-white text-xs`} onClick={() => { setGithubError(null); setGithubLoading(true); (async () => {
+                try {
+                  const resp = await fetch(`/api/github?login=${encodeURIComponent(GITHUB_USERNAME)}`);
+                  if (!resp.ok) throw new Error(`${resp.status}`);
+                  const text = await resp.text(); if (!text) throw new Error('Empty response');
+                  const d = JSON.parse(text);
+                  setGithubData(d); setGithubLoading(false);
+                } catch (err) { setGithubError(err.message || String(err)); setGithubLoading(false); }
+              })() }}>Retry</button>
+            </div>
           )}
 
           <div className="space-y-20">
