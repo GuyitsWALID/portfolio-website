@@ -15,6 +15,9 @@ import {
   Activity,
   GitCommit
 } from 'lucide-react';
+// GitHub components
+// import GithubActivity from './components/GithubActivity';
+import ContributionHeatmap from './components/ContributionHeatmap';
 
 // --- ASSETS & DATA ---
 
@@ -90,6 +93,8 @@ const PORTFOLIO_DATA = {
     { step: "05", title: "SCALE", sub: "System Optimization", desc: "Full deployment & load balancing." }
   ]
 };
+
+const GITHUB_USERNAME = import.meta.env.VITE_GITHUB_USERNAME || 'GuyitsWALID';
 
 // --- COMPONENTS ---
 
@@ -227,23 +232,55 @@ const MatrixRain = () => {
 };
 
 // 4. HEARTBEAT & ACTIVITY COMPONENTS (FOOTER)
-const HeartbeatMonitor = ({ theme, isMatrixMode, vitalColor }) => {
+const HeartbeatMonitor = ({ theme, isMatrixMode, vitalColor, activity, orientation = 'vertical' }) => {
   // Realistic ECG Path (P-QRS-T Wave)
   const ecgPath = "M0 50 L10 50 L15 45 L20 50 L25 50 L30 55 L35 10 L40 80 L45 45 L50 50 L55 50 L60 45 L65 50 L100 50";
 
+  const level = activity?.level || 'LOW';
+  const speed = activity?.speed || 2.8; // seconds per cycle (higher = slower)
+  // If level is LOW, force red; otherwise use the user's selected vitalColor (fallback to level-based colors)
+  const levelColor = level === 'LOW' ? '#ef4444' : (vitalColor || (level === 'HIGH' ? '#22c55e' : '#f59e0b'));
+
+
+  if (orientation === 'horizontal') {
+    return (
+      <>
+        <div className="flex items-center gap-3">
+          <div className="text-xs font-mono" style={{ color: levelColor }}>VITAL_SIGNS: <strong className="ml-1">{level}</strong></div>
+          <div className={`h-10 w-40 border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? levelColor : undefined }}>
+            <div className="absolute inset-0 flex items-center w-[200%] animate-ecg-scroll">
+                 <svg className="h-full w-full" viewBox="0 0 200 100" preserveAspectRatio="none">
+                    <path
+                        d={`${ecgPath} M100 50 L110 50 L115 45 L120 50 L125 50 L130 55 L135 10 L140 80 L145 45 L150 50 L155 50 L160 45 L165 50 L200 50`}
+                        fill="none"
+                        stroke={levelColor}
+                        strokeWidth="2"
+                        vectorEffect="non-scaling-stroke"
+                    />
+                 </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Animation style for horizontal heartbeat (kept local to component) */}
+        <style>{`@keyframes ecg-scroll {0% { transform: translateX(0); } 100% { transform: translateX(-50%); }} .animate-ecg-scroll { animation: ecg-scroll ${speed}s linear infinite; }`}</style>
+      </>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-1">
-      <div className={`text-[10px] font-mono tracking-widest mb-1`} style={{ color: vitalColor }}>
-        VITAL_SIGNS: ACTIVE
+      <div className={`text-[10px] font-mono tracking-widest mb-1`} style={{ color: levelColor }}>
+        VITAL_SIGNS: {level}
       </div>
-      <div className={`h-12 w-48 border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? vitalColor : undefined }}>
+      <div className={`h-12 w-48 border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? levelColor : undefined }}>
         {/* Main Pulse Line */}
         <div className="absolute inset-0 flex items-center w-[200%] animate-ecg-scroll">
              <svg className="h-full w-full" viewBox="0 0 200 100" preserveAspectRatio="none">
                 <path
                     d={`${ecgPath} M100 50 L110 50 L115 45 L120 50 L125 50 L130 55 L135 10 L140 80 L145 45 L150 50 L155 50 L160 45 L165 50 L200 50`}
                     fill="none"
-                    stroke={vitalColor}
+                    stroke={levelColor}
                     strokeWidth="2"
                     vectorEffect="non-scaling-stroke"
                 />
@@ -259,7 +296,7 @@ const HeartbeatMonitor = ({ theme, isMatrixMode, vitalColor }) => {
           100% { transform: translateX(-50%); }
         }
         .animate-ecg-scroll {
-          animation: ecg-scroll 2s linear infinite;
+          animation: ecg-scroll ${speed}s linear infinite;
         }
       `}</style>
     </div>
@@ -561,10 +598,69 @@ export default function App() {
   
   // Footer Vitals State
   const [vitalColor, setVitalColor] = useState('#00FF00'); // Default Neon Green
+  const [allowCustomColor, setAllowCustomColor] = useState(true); // allow user's selected color to override level colors
+  const [heatmapRange, setHeatmapRange] = useState(120); // 90 | 120 | 365 days (default: 120)
   
   // Process Scroll Animation
   const processRef = useRef(null);
   const [scrollProgress, setScrollProgress] = useState(0);
+
+  // GitHub integration state
+  const [githubData, setGithubData] = useState(null);
+  const [githubLoading, setGithubLoading] = useState(false);
+  const [githubError, setGithubError] = useState(null);
+  const [activity, setActivity] = useState({ level: 'LOW', sum: 0, speed: 2 });
+
+  useEffect(() => {
+    if (!GITHUB_USERNAME) return;
+    setGithubLoading(true);
+    setGithubError(null);
+
+    (async () => {
+      try {
+        const resp = await fetch(`/api/github?login=${encodeURIComponent(GITHUB_USERNAME)}`);
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          throw new Error(txt || `HTTP ${resp.status}`);
+        }
+        const text = await resp.text();
+        if (!text) throw new Error('Empty response from server');
+        let d;
+        try {
+          d = JSON.parse(text);
+        } catch (e) {
+          throw new Error('Invalid JSON from server: ' + (text.length > 200 ? text.slice(0,200) + '...' : text));
+        }
+
+        if (d.error) {
+          throw new Error(d.error + (d.details ? ' - ' + d.details : ''));
+        }
+
+        setGithubData(d);
+      } catch (err) {
+        console.error('GitHub fetch error:', err);
+        setGithubError(err.message || String(err));
+        setGithubData(null);
+      } finally {
+        setGithubLoading(false);
+      }
+    })();
+  }, [GITHUB_USERNAME]);
+
+  useEffect(() => {
+    if (!githubData?.contributions) return;
+    const map = new Map(githubData.contributions.map(c => [c.date, c.count]));
+    let sum7 = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().slice(0,10);
+      sum7 += map.get(iso) || 0;
+    }
+    const level = sum7 >= 15 ? 'HIGH' : sum7 >= 4 ? 'MED' : 'LOW';
+    const speed = level === 'HIGH' ? 0.9 : level === 'MED' ? 1.6 : 2.8;
+    setActivity({ level, sum: sum7, speed });
+  }, [githubData]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -794,7 +890,10 @@ export default function App() {
 
           {/* Right Content - Profile Card */}
           <div className="flex-1 flex justify-center lg:justify-end w-full">
-             <ProfileCard theme={theme} isMatrixMode={isMatrixMode} colors={colors} />
+             <div>
+               <ProfileCard theme={theme} isMatrixMode={isMatrixMode} colors={colors} />
+               {/* Color selector removed from profile area (footer will have the vertical picker) */}
+             </div>
           </div>
 
         </section>
@@ -843,41 +942,45 @@ export default function App() {
              <h2 className={`font-mono text-xl ${colors.secondary}`}>// MISSION_LOGS: DEPLOYED_SOLUTIONS</h2>
              <div className={`h-px w-12 ${theme === 'dark' && !isMatrixMode ? 'bg-orange-500' : isMatrixMode ? 'bg-[#00FF00]' : 'bg-orange-700'}`}></div>
           </div>
+          {githubError && (
+            <div className="max-w-7xl mx-auto px-6 mb-6 text-sm text-red-400 font-mono">GitHub fetch error: {githubError}. Ensure <code>GITHUB_TOKEN</code> is set and the server (`npm run start:server`) is running.</div>
+          )}
 
           <div className="space-y-20">
-            {PORTFOLIO_DATA.projects.map((project, idx) => (
-              <div key={idx} className="relative group">
-                {/* Decorative Number */}
+            {/* Use pinned GitHub repos if available, otherwise fall back to static portfolio projects */}
+            {(githubData?.pinned && githubData.pinned.length > 0 ? githubData.pinned : PORTFOLIO_DATA.projects).map((item, idx) => (
+              <div key={item.name || item.id || idx} className="relative group">
+                {/* Decorative Number (use ID if available, else P#) */}
                 <div className={`absolute -top-10 -left-4 font-display text-9xl opacity-5 select-none ${colors.text}`}>
-                  {project.id}
+                  {item.id ?? `P${idx + 1}`}
                 </div>
 
                 <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 border-b border-dashed border-gray-700 pb-12">
-                  {/* Project Info */}
+                  {/* Project / Repo Info */}
                   <div className="lg:col-span-5 flex flex-col justify-center">
                      <div className={`inline-flex items-center gap-2 px-3 py-1 border ${colors.border} w-fit mb-4 font-mono text-[10px] uppercase tracking-widest`}>
-                        <div className={`w-2 h-2 rounded-full ${project.status === 'ACTIVE DEV' ? 'bg-cyan-500 animate-pulse' : project.status === 'OPERATIONAL' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                        STATUS: {project.status}
+                        <div className={`w-2 h-2 rounded-full ${githubData?.pinned && githubData.pinned.length > 0 ? 'bg-green-500' : (item.status === 'ACTIVE DEV' ? 'bg-cyan-500 animate-pulse' : item.status === 'OPERATIONAL' ? 'bg-green-500' : 'bg-yellow-500')}`}></div>
+                        {githubData?.pinned && githubData.pinned.length > 0 ? 'STATUS: DEPLOYED' : `STATUS: ${item.status}`}
                      </div>
                      <h3 className="font-display text-4xl font-bold mb-4">
-                       <GlitchText text={project.name} className={colors.text} />
+                       <GlitchText text={item.name} className={colors.text} />
                      </h3>
                      <p className="font-body text-lg opacity-80 mb-6 leading-relaxed">
-                       {project.desc}
+                       {item.description}
                      </p>
                      <div className="flex flex-wrap gap-2 mb-8">
-                       {project.stack.map((tech, t) => (
+                       {(item.stack || (item.language ? [item.language] : [])).map((tech, t) => (
                          <span key={t} className={`text-xs font-mono px-2 py-1 ${theme === 'dark' && !isMatrixMode ? 'bg-cyan-900/30 text-cyan-300' : isMatrixMode ? 'bg-[#003300] text-[#00FF00]' : 'bg-cyan-100 text-cyan-800'}`}>
                            {tech}
                          </span>
                        ))}
                      </div>
-                     <a href={project.link} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-2 font-mono text-sm uppercase font-bold ${colors.primary} hover:tracking-wider transition-all cursor-none`}>
+                     <a href={item.url || item.link} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-2 font-mono text-sm uppercase font-bold ${colors.primary} hover:tracking-wider transition-all cursor-none`}>
                        Access_System <ChevronRight size={16} />
                      </a>
                   </div>
 
-                  {/* Project Visual (Abstract Frame) */}
+                  {/* Project Visual / Repo Details */}
                   <div className={`lg:col-span-7 border ${colors.border} bg-black/20 backdrop-blur-sm p-2 relative group-hover:shadow-[0_0_30px_rgba(0,255,255,0.1)] transition-shadow`}>
                     <div className="absolute inset-0 grid grid-cols-6 grid-rows-6 pointer-events-none opacity-20">
                       {[...Array(36)].map((_, i) => (
@@ -885,12 +988,13 @@ export default function App() {
                       ))}
                     </div>
                     <div className="h-full w-full bg-gradient-to-br from-cyan-900/20 to-purple-900/20 flex items-center justify-center min-h-[300px]">
-                      {/* Abstract Representation of the Project */}
-                       <div className="text-center p-8 border border-cyan-500/50 bg-black/60 backdrop-blur">
-                          <Globe className="w-12 h-12 mx-auto mb-4 text-cyan-400" />
-                          <div className="font-mono text-xs tracking-widest text-cyan-200">PREVIEW_UNAVAILABLE</div>
-                          <div className="font-mono text-[10px] text-cyan-500 mt-2">SECURE_CONNECTION_REQUIRED</div>
-                       </div>
+                      <div className="text-center p-8 border border-cyan-500/50 bg-black/60 backdrop-blur">
+                        <div className="text-xs text-gray-400">★ {item.stars ?? 0} • Forks: {item.forks ?? 0} • Updated: {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'N/A'}</div>
+                        <pre className="text-xs font-mono text-gray-500 overflow-auto mt-3">{item.description}</pre>
+                        <div className="mt-4">
+                          <a href={item.url || item.link} target="_blank" rel="noopener noreferrer" className={`inline-block font-mono text-xs ${colors.primary} hover:underline`}>View on GitHub</a>
+                        </div>
+                      </div>
                     </div>
                     {/* Corners */}
                     <div className={`absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 ${isMatrixMode ? 'border-[#00FF00]' : 'border-cyan-500'}`}></div>
@@ -1032,25 +1136,52 @@ export default function App() {
            </div>
 
            {/* RIGHT: SYSTEM STATUS & VITAL SIGNS */}
-           <div className="flex flex-wrap gap-8 items-end">
-              {/* VERTICAL COLOR SELECTORS */}
-              <div className="flex flex-col gap-2 mb-2">
+           <div className="flex items-center gap-6">
+              {/* COLOR SELECTORS (FOOTER) - horizontal */}
+              <div className="flex flex-col items-center gap-2">
                  {COLOR_PRESETS.map((color) => (
-                    <button 
+                    <button
                        key={color.hex}
                        onClick={() => setVitalColor(color.hex)}
-                       className={`w-3 h-3 rounded-full transition-all duration-300 ${vitalColor === color.hex ? 'scale-125 shadow-[0_0_8px]' : 'opacity-50 hover:opacity-100'}`}
-                       style={{ backgroundColor: color.hex, boxShadow: vitalColor === color.hex ? `0 0 8px ${color.hex}` : 'none' }}
+                       className={`w-4 h-4 rounded-full transition-all duration-200 ${vitalColor === color.hex ? 'scale-110 shadow-[0_0_8px]' : 'opacity-60 hover:opacity-100'}`}
+                       style={{ backgroundColor: color.hex }}
                        title={`Switch System to ${color.name}`}
                     />
                  ))}
               </div>
-              
-              {/* SYSTEM ACTIVITY GRAPH (GIT) */}
-              <ActivityHeatmap theme={theme} isMatrixMode={isMatrixMode} vitalColor={vitalColor} />
-              
-              {/* VITAL SIGNS (HEARTBEAT) */}
-              <HeartbeatMonitor theme={theme} isMatrixMode={isMatrixMode} vitalColor={vitalColor} />
+
+              {/* SYSTEM ACTIVITY GRAPH (GIT) + RANGE TOGGLE */}
+              <div className={`flex-1 transition-all duration-300 ${heatmapRange === 365 ? 'max-w-[900px]' : heatmapRange === 120 ? 'max-w-[560px]' : 'max-w-[420px]'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  {/* Range Toggle */}
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs font-mono text-cyan-300 mr-2">Range:</div>
+                    <div className="inline-flex rounded-md bg-[#001018]/20 p-1">
+                      {[90,120,365].map(d => (
+                        <button
+                          key={d}
+                          aria-pressed={heatmapRange === d}
+                          onClick={() => setHeatmapRange(d)}
+                          className={`px-2 py-1 text-[12px] font-mono rounded ${heatmapRange === d ? 'bg-cyan-700 text-white' : 'text-cyan-200 hover:bg-cyan-800/30'}`}
+                          title={`Show last ${d} days`}
+                        >
+                          {d === 365 ? '365d' : `${d}d`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Heatmap */}
+                  <div className="flex-1">
+                    <ContributionHeatmap contributions={githubData?.contributions || []} vitalColor={vitalColor} daysBack={heatmapRange} />
+                  </div>
+                </div>
+              </div>
+
+              {/* VITAL SIGNS (HEARTBEAT) - horizontal compact */}
+              <div className="w-[220px]">
+                <HeartbeatMonitor theme={theme} isMatrixMode={isMatrixMode} vitalColor={vitalColor} activity={activity} orientation="horizontal" />
+              </div>
            </div>
         </div>
       </footer>
