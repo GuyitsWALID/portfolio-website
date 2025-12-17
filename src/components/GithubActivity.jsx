@@ -87,7 +87,7 @@ export default function GithubActivity({ username, contributions: contributionsP
         <div className="flex gap-3 overflow-x-auto py-2">
           {data.pinned && data.pinned.length ? (
             data.pinned.map(r => (
-              <a key={r.name} href={r.url} className="min-w-[220px] flex-shrink-0 block p-3 rounded-md hover:bg-gray-800/50 border border-gray-800" target="_blank" rel="noreferrer">
+              <a key={r.name} href={r.url} className="w-full md:min-w-[220px] flex-shrink-0 block p-3 rounded-md hover:bg-gray-800/50 border border-gray-800" target="_blank" rel="noreferrer">
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-medium">{r.name}</div>
                   <div className="text-xs text-gray-400">★ {r.stars}</div>

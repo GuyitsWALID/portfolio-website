@@ -247,7 +247,7 @@ const HeartbeatMonitor = ({ theme, isMatrixMode, vitalColor, activity, orientati
       <>
         <div className="flex items-center gap-3">
           <div className="text-xs font-mono" style={{ color: levelColor }}>VITAL_SIGNS: <strong className="ml-1">{level}</strong></div>
-          <div className={`h-10 w-40 border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? levelColor : undefined }}>
+          <div className={`h-10 w-full md:w-40 max-w-[320px] border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? levelColor : undefined }}>
             <div className="absolute inset-0 flex items-center w-[200%] animate-ecg-scroll">
                  <svg className="h-full w-full" viewBox="0 0 200 100" preserveAspectRatio="none">
                     <path
@@ -273,7 +273,7 @@ const HeartbeatMonitor = ({ theme, isMatrixMode, vitalColor, activity, orientati
       <div className={`text-[10px] font-mono tracking-widest mb-1`} style={{ color: levelColor }}>
         VITAL_SIGNS: {level}
       </div>
-      <div className={`h-12 w-48 border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? levelColor : undefined }}>
+      <div className={`h-12 w-full md:w-48 max-w-[320px] border relative overflow-hidden rounded-sm ${theme === 'dark' || isMatrixMode ? 'bg-black/50 border-current' : 'bg-white border-gray-300'}`} style={{ borderColor: theme === 'dark' || isMatrixMode ? levelColor : undefined }}>
         {/* Main Pulse Line */}
         <div className="absolute inset-0 flex items-center w-[200%] animate-ecg-scroll">
              <svg className="h-full w-full" viewBox="0 0 200 100" preserveAspectRatio="none">
@@ -595,6 +595,8 @@ export default function App() {
   const [booted, setBooted] = useState(true);
   const [theme, setTheme] = useState('dark'); // 'dark' (Deep Space) or 'light' (Orbital Day)
   const [isMatrixMode, setIsMatrixMode] = useState(false); // New Matrix State
+  const [mobileNavOpen, setMobileNavOpen] = useState(false); // mobile nav menu
+
   
   // Footer Vitals State
   const [vitalColor, setVitalColor] = useState('#00FF00'); // Default Neon Green
@@ -833,18 +835,42 @@ export default function App() {
             </div>
           </div>
 
-          {/* THEME TOGGLE */}
+          {/* THEME TOGGLE + MOBILE MENU */}
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-2 text-[10px] font-mono opacity-60 mr-4">
                <span className="animate-pulse">[HOLD SPACE FOR MATRIX]</span>
             </div>
+
+            {/* Mobile menu button (small screens) */}
+            <button
+              className={`md:hidden p-2 rounded border ${colors.border} text-xs`} 
+              aria-expanded={mobileNavOpen}
+              aria-label="Toggle navigation"
+              onClick={() => setMobileNavOpen(s => !s)}
+            >
+              <span className="sr-only">Open menu</span>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+
             <button 
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className={`flex items-center gap-2 px-4 py-2 rounded border ${colors.border} hover:bg-cyan-500/10 transition-all font-mono text-xs z-50 cursor-none`}
+              className={`hidden md:flex items-center gap-2 px-4 py-2 rounded border ${colors.border} hover:bg-cyan-500/10 transition-all font-mono text-xs z-50 cursor-none`}
             >
               {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
               <span className="hidden sm:inline">{theme === 'dark' ? 'INITIATE_ORBITAL_DAY' : 'ENGAGE_DEEP_SPACE'}</span>
             </button>
+          </div>
+
+        </div>
+
+        {/* Mobile Nav Panel */}
+        <div className={`${mobileNavOpen ? 'block' : 'hidden'} md:hidden border-b ${colors.border} ${colors.nav}`}>
+          <div className="px-6 py-3 space-y-2">
+            <a href="#projects" onClick={() => setMobileNavOpen(false)} className={`block font-mono text-sm ${colors.text} py-2`}>Mission_Logs</a>
+            <a href="#contact" onClick={() => setMobileNavOpen(false)} className={`block font-mono text-sm ${colors.text} py-2`}>Open_Comms</a>
+            <div className="border-t pt-2">
+              <button onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setMobileNavOpen(false); }} className={`w-full text-left font-mono py-2 ${colors.text}`}>{theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}</button>
+            </div>
           </div>
         </div>
       </nav>
@@ -950,12 +976,12 @@ export default function App() {
             {/* Use pinned GitHub repos if available, otherwise fall back to static portfolio projects */}
             {(githubData?.pinned && githubData.pinned.length > 0 ? githubData.pinned : PORTFOLIO_DATA.projects).map((item, idx) => (
               <div key={item.name || item.id || idx} className="relative group">
-                {/* Decorative Number (use ID if available, else P#) */}
-                <div className={`absolute -top-10 -left-4 font-display text-9xl opacity-5 select-none ${colors.text}`}>
+                {/* Decorative Number (hidden on small screens to avoid overlap) */}
+                <div className={`hidden md:block absolute -top-10 -left-4 font-display text-9xl opacity-5 select-none ${colors.text}`}>
                   {item.id ?? `P${idx + 1}`}
                 </div>
 
-                <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 border-b border-dashed border-gray-700 pb-12">
+                <div className="relative z-10 grid grid-cols-1 md:grid-cols-1 lg:grid-cols-12 gap-8 border-b border-dashed border-gray-700 pb-12">
                   {/* Project / Repo Info */}
                   <div className="lg:col-span-5 flex flex-col justify-center">
                      <div className={`inline-flex items-center gap-2 px-3 py-1 border ${colors.border} w-fit mb-4 font-mono text-[10px] uppercase tracking-widest`}>
@@ -981,13 +1007,13 @@ export default function App() {
                   </div>
 
                   {/* Project Visual / Repo Details */}
-                  <div className={`lg:col-span-7 border ${colors.border} bg-black/20 backdrop-blur-sm p-2 relative group-hover:shadow-[0_0_30px_rgba(0,255,255,0.1)] transition-shadow`}>
+                  <div className={`lg:col-span-7 border ${colors.border} p-2 relative transition-shadow ${colors.card}`}>
                     <div className="absolute inset-0 grid grid-cols-6 grid-rows-6 pointer-events-none opacity-20">
                       {[...Array(36)].map((_, i) => (
                         <div key={i} className="border-[0.5px] border-cyan-500/30"></div>
                       ))}
                     </div>
-                    <div className="h-full w-full bg-gradient-to-br from-cyan-900/20 to-purple-900/20 flex items-center justify-center min-h-[300px]">
+                    <div className="h-full w-full bg-gradient-to-br from-cyan-900/20 to-purple-900/20 flex items-center justify-center min-h-[200px] md:min-h-[300px]">
                       <div className="text-center p-8 border border-cyan-500/50 bg-black/60 backdrop-blur">
                         <div className="text-xs text-gray-400">★ {item.stars ?? 0} • Forks: {item.forks ?? 0} • Updated: {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'N/A'}</div>
                         <pre className="text-xs font-mono text-gray-500 overflow-auto mt-3">{item.description}</pre>
@@ -1136,14 +1162,15 @@ export default function App() {
            </div>
 
            {/* RIGHT: SYSTEM STATUS & VITAL SIGNS */}
-           <div className="flex items-center gap-6">
+           <div className="flex flex-col md:flex-row md:items-center gap-6 w-full">
               {/* COLOR SELECTORS (FOOTER) - horizontal */}
-              <div className="flex flex-col items-center gap-2">
+              <div className="flex md:flex-col flex-row items-center gap-2 md:gap-2">
                  {COLOR_PRESETS.map((color) => (
                     <button
                        key={color.hex}
                        onClick={() => setVitalColor(color.hex)}
-                       className={`w-4 h-4 rounded-full transition-all duration-200 ${vitalColor === color.hex ? 'scale-110 shadow-[0_0_8px]' : 'opacity-60 hover:opacity-100'}`}
+                       aria-label={`Switch to ${color.name}`}
+                       className={`w-6 h-6 md:w-4 md:h-4 rounded-full transition-all duration-200 ${vitalColor === color.hex ? 'scale-110 shadow-[0_0_8px]' : 'opacity-60 hover:opacity-100'}`}
                        style={{ backgroundColor: color.hex }}
                        title={`Switch System to ${color.name}`}
                     />
@@ -1151,18 +1178,18 @@ export default function App() {
               </div>
 
               {/* SYSTEM ACTIVITY GRAPH (GIT) + RANGE TOGGLE */}
-              <div className={`flex-1 transition-all duration-300 ${heatmapRange === 365 ? 'max-w-[900px]' : heatmapRange === 120 ? 'max-w-[560px]' : 'max-w-[420px]'}`}>
+              <div className={`flex-1 w-full transition-all duration-300 ${heatmapRange === 365 ? 'max-w-[900px]' : heatmapRange === 120 ? 'max-w-[560px]' : 'max-w-[420px]'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   {/* Range Toggle */}
                   <div className="flex items-center gap-2">
-                    <div className="text-xs font-mono text-cyan-300 mr-2">Range:</div>
-                    <div className="inline-flex rounded-md bg-[#001018]/20 p-1">
+                    <div className={`text-xs font-mono mr-2 ${colors.primary}`}>Range:</div>
+                    <div className={`inline-flex rounded-md p-1 ${theme === 'dark' ? 'bg-[#001018]/20' : 'bg-gray-100/30'}`}>
                       {[90,120,365].map(d => (
                         <button
                           key={d}
                           aria-pressed={heatmapRange === d}
                           onClick={() => setHeatmapRange(d)}
-                          className={`px-2 py-1 text-[12px] font-mono rounded ${heatmapRange === d ? 'bg-cyan-700 text-white' : 'text-cyan-200 hover:bg-cyan-800/30'}`}
+                          className={`px-2 py-1 text-[12px] font-mono rounded ${heatmapRange === d ? (theme === 'dark' ? 'bg-cyan-700 text-white' : 'bg-green-100 text-[#064e1b]') : (theme === 'dark' ? 'text-cyan-200 hover:bg-cyan-800/30' : 'text-[#1a1a2e] hover:bg-gray-100')}`}
                           title={`Show last ${d} days`}
                         >
                           {d === 365 ? '365d' : `${d}d`}
@@ -1173,13 +1200,13 @@ export default function App() {
 
                   {/* Heatmap */}
                   <div className="flex-1">
-                    <ContributionHeatmap contributions={githubData?.contributions || []} vitalColor={vitalColor} daysBack={heatmapRange} />
+                    <ContributionHeatmap contributions={githubData?.contributions || []} vitalColor={vitalColor} daysBack={heatmapRange} theme={theme} />
                   </div>
                 </div>
               </div>
 
               {/* VITAL SIGNS (HEARTBEAT) - horizontal compact */}
-              <div className="w-[220px]">
+              <div className="w-full md:w-[220px]">
                 <HeartbeatMonitor theme={theme} isMatrixMode={isMatrixMode} vitalColor={vitalColor} activity={activity} orientation="horizontal" />
               </div>
            </div>

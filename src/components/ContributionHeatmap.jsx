@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 
 // Show a 4-month heatmap by default and provide better scroll UX + mobile/touch support
-export default function ContributionHeatmap({ contributions = [], daysBack = 120, vitalColor = '#00FF00' }) {
+export default function ContributionHeatmap({ contributions = [], daysBack = 120, vitalColor = '#00FF00', theme = 'dark' }) {
   const containerRef = useRef(null);
   const [winWidth, setWinWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
@@ -83,13 +83,13 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 120
 
 
   return (
-    <div className="p-3 rounded-md border border-cyan-700 bg-[#001018]/60 relative" ref={containerRef}>
+    <div className={`p-3 rounded-md border ${theme === 'dark' ? 'border-cyan-700 bg-[#001018]/60' : 'border-gray-300 bg-white/90'} relative`} ref={containerRef}>
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-mono text-cyan-300">Contribution Heatmap</div>
-        <div className="text-xs text-cyan-400">Last {daysBack}d</div>
+        <div className={`text-xs font-mono ${theme === 'dark' ? 'text-cyan-300' : 'text-[#0b4f4f]'}`}>Contribution Heatmap</div>
+        <div className={`text-xs ${theme === 'dark' ? 'text-cyan-400' : 'text-gray-600'}`}>Last {daysBack}d</div>
       </div>
 
-      <div className="overflow-x-auto scroll-smooth snap-x snap-mandatory -webkit-overflow-scrolling-touch" style={{ paddingBottom: 6 }}>
+      <div className="overflow-x-auto scroll-smooth snap-x snap-mandatory -webkit-overflow-scrolling-touch" style={{ paddingBottom: 12, touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}>
         <div className="flex gap-1" style={{ alignItems: 'flex-start' }}>
           {weeks.map((week, wi) => (
             <div key={wi} className="flex flex-col gap-1 snap-start" style={{ lineHeight: 0 }}>
@@ -108,10 +108,10 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 120
       </div>
 
 
-      <div className="mt-2 text-[11px] text-cyan-300 flex items-center gap-2">
+      <div className={`mt-2 text-[11px] ${theme === 'dark' ? 'text-cyan-300' : 'text-gray-600'} flex items-center gap-2`}>
         <span className="font-mono">Low</span>
         <div className="flex gap-1 items-center">
-          <div style={{ width: 16, height: 10, backgroundColor: '#071023' }} />
+          <div style={{ width: 16, height: 10, backgroundColor: theme === 'dark' ? '#071023' : '#f3f4f6' }} />
           <div style={{ width: 16, height: 10, backgroundColor: `hsl(${hsl.h} ${hsl.s}% ${Math.round(hsl.l + 8)}%)` }} />
           <div style={{ width: 16, height: 10, backgroundColor: `hsl(${hsl.h} ${hsl.s}% ${Math.round(hsl.l - 4)}%)` }} />
           <div style={{ width: 16, height: 10, backgroundColor: `hsl(${hsl.h} ${hsl.s}% ${Math.round(hsl.l - 20)}%)` }} />
