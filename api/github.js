@@ -1,11 +1,9 @@
-const fetch = globalThis.fetch || require('node-fetch');
-require('dotenv').config();
+import 'dotenv/config';
 
-// Simple in-memory cache (persists between warm invocations)
-const cache = new Map();
+// Vercel serverless function (ESM)
 const CACHE_TTL = Number(process.env.GITHUB_CACHE_TTL || 60) * 1000; // ms
-function setCache(key, value) { cache.set(key, { value, ts: Date.now() }); }
-function getCache(key) { const entry = cache.get(key); if (!entry) return null; if (Date.now() - entry.ts > CACHE_TTL) { cache.delete(key); return null; } return entry.value; }
+function setCache(key, value) { globalThis.__GH_CACHE = globalThis.__GH_CACHE || new Map(); globalThis.__GH_CACHE.set(key, { value, ts: Date.now() }); }
+function getCache(key) { globalThis.__GH_CACHE = globalThis.__GH_CACHE || new Map(); const entry = globalThis.__GH_CACHE.get(key); if (!entry) return null; if (Date.now() - entry.ts > CACHE_TTL) { globalThis.__GH_CACHE.delete(key); return null; } return entry.value; }
 
 const GITHUB_GRAPHQL = `
 query($login: String!, $from: DateTime!, $to: DateTime!) {
@@ -44,22 +42,7 @@ query($login: String!, $from: DateTime!, $to: DateTime!) {
 }
 `;
 
-async function fetchGithubGraphql(token, query, variables) {
-  const resp = await fetch('https://api.github.com/graphql', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `bearer ${token}` },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => null);
-    const err = new Error('GitHub API error');
-    err.status = resp.status; err.body = txt;
-    throw err;
-  }
-  return resp.json();
-}
-
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
     const token = process.env.GITHUB_TOKEN;
     const login = (req.query?.login || req.body?.login || process.env.GITHUB_USERNAME || 'octocat');
@@ -83,11 +66,22 @@ module.exports = async (req, res) => {
       const recent = Array.isArray(repos) ? repos.map(r => ({ name: r.name, url: r.html_url, description: r.description, stars: r.stargazers_count, forks: r.forks_count, pushedAt: r.pushed_at })) : [];
       const out = { pinned: [], contributions: [], recent, projects: [], totals: { totalContributions: 0 }, warning: 'MISSING_GITHUB_TOKEN' };
       setCache(cacheKey, out);
-      return res.json({ cached: false, ...out });
+      return res.status(200).json({ cached: false, ...out });
     }
 
-    // With token: call GraphQL
-    const data = await fetchGithubGraphql(token, GITHUB_GRAPHQL, { login, from, to });
+    const graphqlResp = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `bearer ${token}` },
+      body: JSON.stringify({ query: GITHUB_GRAPHQL, variables: { login, from, to } }),
+    });
+
+    if (!graphqlResp.ok) {
+      const txt = await graphqlResp.text().catch(() => null);
+      console.error('GitHub API non-OK response:', graphqlResp.status, txt);
+      return res.status(graphqlResp.status).json({ error: 'GitHub API error', details: txt });
+    }
+
+    const data = await graphqlResp.json();
     if (!data || !data.data || !data.data.user) return res.status(502).json({ error: 'No user data returned', raw: data });
 
     const user = data.data.user;
@@ -97,11 +91,11 @@ module.exports = async (req, res) => {
     const projects = (user.projectsV2?.nodes || []).filter(Boolean).map(p => ({ id: p?.id, title: p?.title, url: p?.url }));
     const out = { pinned, contributions, recent, projects, totals: { totalContributions: user.contributionsCollection?.contributionCalendar?.totalContributions || 0 } };
     setCache(cacheKey, out);
-    return res.json({ cached: false, ...out });
+    return res.status(200).json({ cached: false, ...out });
 
   } catch (err) {
-    console.error('API /api/github error:', err && (err.stack || err.message || err));
+    console.error('Serverless /api/github error:', err && (err.stack || err.message || err));
     const status = err?.status || 500;
     return res.status(status).json({ error: err.message || 'Internal error', details: err.body || undefined });
   }
-};
+}

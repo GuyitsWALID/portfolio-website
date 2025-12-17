@@ -1,2 +1,2 @@
-# Ignore the duplicate API file to avoid conflicts with api/github.cjs
-api/github.js
+# Ignore the CommonJS API file so Vercel uses the ESM api/github.js
+api/github.cjs
