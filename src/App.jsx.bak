@@ -1,0 +1,123 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Terminal, 
+  Cpu, 
+  Database, 
+  Globe, 
+  Zap, 
+  Code, 
+  Github, 
+  Linkedin, 
+  Mail,
+  Moon,
+  Sun,
+  ChevronRight,
+  Activity,
+  GitCommit
+} from 'lucide-react';
+// GitHub components
+// import GithubActivity from './components/GithubActivity';
+import ContributionHeatmap from './components/ContributionHeatmap';
+
+// --- ASSETS & DATA ---
+
+const IbexLogo = ({ className }) => (
+    <img 
+        src="/ibex.svg" 
+        alt="Ibex Logo" 
+        className={className}
+        style={{ 
+            objectFit: 'contain',
+            filter: 'brightness(0) saturate(100%) invert(72%) sepia(96%) saturate(2426%) hue-rotate(76deg) brightness(102%) contrast(101%)',
+            width: '60px',
+            height: '60px'
+        }}
+    />
+);
+
+const PORTFOLIO_DATA = {
+  roles: [
+    "FULL-STACK DEVELOPER",
+    "SYSTEM DESIGNER",
+    "AUTOMATION ARCHITECT"
+  ],
+  skills: [
+    { category: "CORE ENGINE", icon: <Code />, items: ["React / Next.js", "TypeScript", "Node.js", "Tailwind CSS"] },
+    { category: "DATA SYSTEMS", icon: <Database />, items: ["Supabase", "PostgreSQL", "MongoDB", "Cloud Infrastructure"] },
+    { category: "AI & INTELLIGENCE", icon: <Cpu />, items: ["Gemini AI Integration", "Python / PyTorch", "Scikit-learn", "Algorithm Design"] },
+    { category: "AUTOMATION", icon: <Zap />, items: ["n8n Workflows", "Make.com", "System Protocols", "API Integration"] }
+  ],
+  projects: [
+    {
+      id: "01",
+      name: "COSTPILOT",
+      type: "AI FIN-TECH",
+      status: "OPERATIONAL",
+      desc: "AI Budget Forecaster using Gemini AI to predict project costs for technical leaders.",
+      stack: ["Next.js", "Gemini AI", "Supabase", "Tailwind"],
+      link: "http://costpiolt.vercel.app/"
+    },
+    {
+      id: "02",
+      name: "COREFIT",
+      type: "SAAS PLATFORM",
+      status: "SCALING",
+      desc: "Multi-tenant gym management system designed for scaling fitness entrepreneurs.",
+      stack: ["React", "Cloud Infra", "Multi-Tenant Arch", "Stripe"],
+      link: "https://corefit-landing.vercel.app/"
+    },
+    {
+      id: "03",
+      name: "MEKINAHUB",
+      type: "MARKETPLACE",
+      status: "DEPLOYED",
+      desc: "Modern automotive marketplace with 3D showroom capabilities connecting buyers and sellers.",
+      stack: ["React", "Next.js", "3D Rendering", "Postgres"],
+      link: "https://mekinahub.vercel.app/"
+    },
+    {
+      id: "04",
+      name: "INVOICEFLOW",
+      type: "OPEN SOURCE",
+      status: "ACTIVE DEV",
+      desc: "Streamlined invoicing automation workflow built with TypeScript for rapid financial processing.",
+      stack: ["TypeScript", "Automation", "Node.js"],
+      link: "https://github.com/GuyitsWALID"
+    }
+  ],
+  process: [
+    { step: "01", title: "IDENTIFY", sub: "Target Acquisition", desc: "Anomaly detection & requirements gathering." },
+    { step: "02", title: "ARCHITECT", sub: "Blueprint Generation", desc: "Multi-tenant system design & DB schema." },
+    { step: "03", title: "AUTOMATE", sub: "Workflow Protocol", desc: "Inter-system comms via n8n/Make." },
+    { step: "04", title: "PROTOTYPE", sub: "Rapid Deployment", desc: "High-fidelity MVP development." },
+    { step: "05", title: "SCALE", sub: "System Optimization", desc: "Full deployment & load balancing." }
+  ]
+};
+
+const GITHUB_USERNAME = import.meta.env.VITE_GITHUB_USERNAME || 'GuyitsWALID';
+
+// --- COMPONENTS ---
+
+// 1. TYPEWRITER EFFECT COMPONENT
+const Typewriter = ({ words, wait = 2000 }) => {
+  const [index, setIndex] = useState(0);
+  const [subIndex, setSubIndex] = useState(0);
+  const [reverse, setReverse] = useState(false);
+  const [blink, setBlink] = useState(true);
+
+  useEffect(() => {
+    const timeout2 = setTimeout(() => {
+      setBlink((prev) => !prev);
+    }, 500);
+    return () => clearTimeout(timeout2);
+  }, []);
+
+  useEffect(() => {
+    if (subIndex === words[index].length + 1 && !reverse) {
+      setReverse(true);
+      return;
+    }
+  
+  // ... (backup contains full original file content)
+  
+}

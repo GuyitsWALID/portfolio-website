@@ -21,13 +21,13 @@ This project now includes a small server proxy to fetch GitHub GraphQL data (pin
 
    The proxy runs at http://localhost:4000/api/github
 
-5. In another terminal, start the Vite dev server:
+5. In another terminal, start the Next.js dev server:
 
    npm run dev
 
-   Vite proxies `/api` to the local server during development.
+   Next.js serves the site and the built-in API routes are available at `/api`.
 
-6. Open your site at http://localhost:5173
+6. Open your site at http://localhost:3000
 
 ## Deployment notes
 

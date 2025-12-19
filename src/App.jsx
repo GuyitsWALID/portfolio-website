@@ -94,7 +94,7 @@ const PORTFOLIO_DATA = {
   ]
 };
 
-const GITHUB_USERNAME = import.meta.env.VITE_GITHUB_USERNAME || 'GuyitsWALID';
+const GITHUB_USERNAME = (typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_GITHUB_USERNAME || process.env.GITHUB_USERNAME)) || 'GuyitsWALID';
 
 // --- COMPONENTS ---
 
@@ -601,7 +601,9 @@ export default function App() {
   // Footer Vitals State
   const [vitalColor, setVitalColor] = useState('#00FF00'); // Default Neon Green
   const [allowCustomColor, setAllowCustomColor] = useState(true); // allow user's selected color to override level colors
-  const [heatmapRange, setHeatmapRange] = useState(120); // 90 | 120 | 365 days (default: 120)
+
+  const [heatmapRange, setHeatmapRange] = useState(365); // 90 | 120 | 365 days (default: 365)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear()); // always a number; heatmap uses yearly API
   
   // Process Scroll Animation
   const processRef = useRef(null);
@@ -614,31 +616,54 @@ export default function App() {
   const [activity, setActivity] = useState({ level: 'LOW', sum: 0, speed: 2 });
 
   useEffect(() => {
+    // Fetch contributions for previous year and current year separately to respect GitHub 1-year limit
     if (!GITHUB_USERNAME) return;
     setGithubLoading(true);
     setGithubError(null);
 
     (async () => {
       try {
-        const resp = await fetch(`/api/github?login=${encodeURIComponent(GITHUB_USERNAME)}`);
-        if (!resp.ok) {
-          const txt = await resp.text().catch(() => '');
-          throw new Error(txt || `HTTP ${resp.status}`);
-        }
-        const text = await resp.text();
-        if (!text) throw new Error('Empty response from server');
-        let d;
-        try {
-          d = JSON.parse(text);
-        } catch (e) {
-          throw new Error('Invalid JSON from server: ' + (text.length > 200 ? text.slice(0,200) + '...' : text));
-        }
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const prevYear = currentYear - 1;
 
-        if (d.error) {
-          throw new Error(d.error + (d.details ? ' - ' + d.details : ''));
-        }
+        const fetchRange = async (from, to) => {
+          const url = `/api/github?login=${encodeURIComponent(GITHUB_USERNAME)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            const txt = await resp.text().catch(() => '');
+            throw new Error(txt || `HTTP ${resp.status}`);
+          }
+          const text = await resp.text();
+          if (!text) throw new Error('Empty response from server');
+          return JSON.parse(text);
+        };
 
-        setGithubData(d);
+        const fromPrev = new Date(prevYear, 0, 1).toISOString();
+        const toPrev = new Date(prevYear, 11, 31, 23, 59, 59).toISOString();
+        const fromCur = new Date(currentYear, 0, 1).toISOString();
+        const toCur = now.toISOString();
+
+        const [dataPrev, dataCur] = await Promise.all([fetchRange(fromPrev, toPrev), fetchRange(fromCur, toCur)]);
+
+        if (dataPrev?.error) throw new Error(dataPrev.error + (dataPrev.details ? ' - ' + dataPrev.details : ''));
+        if (dataCur?.error) throw new Error(dataCur.error + (dataCur.details ? ' - ' + dataCur.details : ''));
+
+        // merge contributions (sum counts if duplicate dates, though dates should be unique across years)
+        const combined = [...(dataPrev.contributions || []), ...(dataCur.contributions || [])];
+        const byDate = combined.reduce((acc, c) => {
+          acc[c.date] = (acc[c.date] || 0) + (c.count || 0);
+          return acc;
+        }, {});
+        const mergedContributions = Object.keys(byDate).map(d => ({ date: d, count: byDate[d] }));
+
+        // Merge other data (pinned/recent/projects) preferring current year's items first
+        const pinned = Array.from(new Map([...(dataCur.pinned || []), ...(dataPrev.pinned || [])].map(p => [p.name || Math.random(), p])).values());
+        const recent = [...(dataCur.recent || []), ...(dataPrev.recent || [])];
+        const projects = [...(dataCur.projects || []), ...(dataPrev.projects || [])];
+        const totals = { totalContributions: (dataPrev.totals?.totalContributions || 0) + (dataCur.totals?.totalContributions || 0) };
+
+        setGithubData({ pinned, contributions: mergedContributions, recent, projects, totals });
       } catch (err) {
         console.error('GitHub fetch error:', err);
         setGithubError(err.message || String(err));
@@ -651,6 +676,7 @@ export default function App() {
 
   useEffect(() => {
     if (!githubData?.contributions) return;
+
     const map = new Map(githubData.contributions.map(c => [c.date, c.count]));
     let sum7 = 0;
     for (let i = 0; i < 7; i++) {
@@ -662,7 +688,13 @@ export default function App() {
     const level = sum7 >= 15 ? 'HIGH' : sum7 >= 4 ? 'MED' : 'LOW';
     const speed = level === 'HIGH' ? 0.9 : level === 'MED' ? 1.6 : 2.8;
     setActivity({ level, sum: sum7, speed });
-  }, [githubData]);
+
+    // Ensure selectedYear is valid when contributions arrive (set to newest year available)
+    const years = Array.from(new Set(githubData.contributions.map(c => new Date(c.date).getFullYear()))).sort((a,b)=>b-a);
+    if (years.length && typeof selectedYear === 'number' && !years.includes(selectedYear)) {
+      setSelectedYear(years[0]);
+    }
+  }, [githubData, selectedYear]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -1159,9 +1191,9 @@ export default function App() {
 
       {/* FOOTER */}
       <footer className={`border-t ${colors.border} py-8 ${colors.nav} relative z-10`}>
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-8 font-mono text-xs opacity-80">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-12 font-mono text-xs opacity-80">
            {/* LEFT: COPYRIGHT & LOC */}
-           <div className="flex flex-col gap-2 mb-2">
+           <div className="flex flex-col  gap-2 mb-2">
              <div className="font-bold">
                WALID MURAD // <Typewriter words={PORTFOLIO_DATA.roles} /> © {new Date().getFullYear()}
              </div>
@@ -1173,7 +1205,7 @@ export default function App() {
            </div>
 
            {/* RIGHT: SYSTEM STATUS & VITAL SIGNS */}
-           <div className="flex flex-col md:flex-row md:items-center gap-6 w-full">
+           <div className="flex flex-col md:flex-row md:items-center gap-12 w-full">
               {/* COLOR SELECTORS (FOOTER) - horizontal */}
               <div className="flex md:flex-col flex-row items-center gap-2 md:gap-2">
                  {COLOR_PRESETS.map((color) => (
@@ -1189,19 +1221,19 @@ export default function App() {
               </div>
 
               {/* SYSTEM ACTIVITY GRAPH (GIT) + RANGE TOGGLE */}
-              <div className={`flex-1 w-full transition-all duration-300 ${heatmapRange === 365 ? 'max-w-[900px]' : heatmapRange === 120 ? 'max-w-[560px]' : 'max-w-[420px]'}`}>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className={`flex-1 w-full transition-all duration-300 ${typeof selectedYear === 'number' ? 'max-w-[1000px]' : heatmapRange === 365 ? 'max-w-[900px]' : heatmapRange === 120 ? 'max-w-[560px]' : 'max-w-[420px]'}`}>
+                <div className="flex flex-col md:flex-row gap-4 md:gap-8 w-full">
                   {/* Range Toggle */}
-                  <div className="flex items-center gap-2">
-                    <div className={`text-xs font-mono mr-2 ${colors.primary}`}>Range:</div>
-                    <div className={`inline-flex rounded-md p-1 ${theme === 'dark' ? 'bg-[#001018]/20' : 'bg-gray-100/30'}`}>
-                      {[90,120,365].map(d => (
+                  <div className="flex flex-col items-start gap-2 md:w-1/2">
+                    <div className={`text-xs font-mono ${colors.primary}`}>Range:</div>
+                    <div className={`inline-flex flex-wrap rounded-md p-1 gap-2 ${theme === 'dark' ? 'bg-[#001018]/20' : 'bg-gray-100/30'}`}>
+                      {[90, 120, 365].map(d => (
                         <button
-                          key={d}
+                          key={`days-${d}`}
                           aria-pressed={heatmapRange === d}
                           onClick={() => setHeatmapRange(d)}
                           className={`px-2 py-1 text-[12px] font-mono rounded ${heatmapRange === d ? (theme === 'dark' ? 'bg-cyan-700 text-white' : 'bg-green-100 text-[#064e1b]') : (theme === 'dark' ? 'text-cyan-200 hover:bg-cyan-800/30' : 'text-[#1a1a2e] hover:bg-gray-100')}`}
-                          title={`Show last ${d} days`}
+                          title={`Show last ${d} days inside selected year`}
                         >
                           {d === 365 ? '365d' : `${d}d`}
                         </button>
@@ -1209,21 +1241,50 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Heatmap */}
-                  <div className="flex-1">
-                    <ContributionHeatmap contributions={githubData?.contributions || []} vitalColor={vitalColor} daysBack={heatmapRange} theme={theme} />
+                  {/* Year selectors (placed below Range on small screens; buttons laid out horizontally) */}
+                  <div className="flex flex-col items-start sm:items-center gap-2 md:w-1/2">
+                    <div className={`text-xs font-mono ${colors.primary}`}>Year:</div>
+                    <div className="inline-flex flex-wrap gap-2 items-center">
+                      {([new Date().getFullYear(), new Date().getFullYear() - 1]).map(y => {
+                        const hasData = githubData?.contributions?.some(c => new Date(c.date).getFullYear() === y);
+                        return (
+                          <button
+                            key={y}
+                            onClick={() => { setSelectedYear(y); setHeatmapRange(365); }}
+                            aria-pressed={selectedYear === y}
+                            disabled={!hasData}
+                            className={`px-2 py-1 text-[12px] font-mono rounded ${selectedYear === y ? (theme === 'dark' ? 'bg-cyan-700 text-white' : 'bg-green-100 text-[#064e1b]') : (theme === 'dark' ? 'text-cyan-200 hover:bg-cyan-800/30' : 'text-[#1a1a2e] hover:bg-gray-100')} ${!hasData ? 'opacity-40 cursor-not-allowed' : ''}`}
+                            title={hasData ? `Show year ${y}` : `No data for ${y}`}
+                          >
+                            {y}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
+
+                {/* Heatmap */}
+                  <div className="flex-1">
+                    <ContributionHeatmap
+                      contributions={githubData?.contributions || []}
+                      vitalColor={vitalColor}
+                      daysBack={heatmapRange}
+                      year={selectedYear}
+                      theme={theme}
+                    />
+                  </div>
+                </div>
 
               {/* VITAL SIGNS (HEARTBEAT) - horizontal compact */}
-              <div className="w-full md:w-[220px]">
+              <div className="w-full md:w-[220px] md:pl-8">
                 <HeartbeatMonitor theme={theme} isMatrixMode={isMatrixMode} vitalColor={vitalColor} activity={activity} orientation="horizontal" />
               </div>
            </div>
         </div>
       </footer>
 
+      {/* footer end */}
     </div>
   );
 }

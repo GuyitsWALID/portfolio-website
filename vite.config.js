@@ -1,16 +1,3 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:4000',
-        changeOrigin: true,
-        secure: false
-      }
-    }
-  }
-})
+// Vite has been removed in favor of Next.js during migration.
+// Original file intentionally left as a placeholder to avoid accidental re-introduction of Vite.
+// Please remove this file when you're confident the migration is complete.
