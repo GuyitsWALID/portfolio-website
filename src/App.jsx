@@ -1057,9 +1057,9 @@ export default function App() {
                       ))}
                     </div>
                     <div className="h-full w-full bg-gradient-to-br from-cyan-900/20 to-purple-900/20 flex items-center justify-center min-h-[200px] md:min-h-[300px]">
-                      <div className="text-center p-8 border border-cyan-500/50 bg-black/60 backdrop-blur">
+                      <div className="text-center p-8 border border-cyan-500/50 bg-black/60 backdrop-blur max-w-[90%] md:max-w-[70%] mx-auto">
                         <div className="text-xs text-gray-400">★ {item.stars ?? 0} • Forks: {item.forks ?? 0} • Updated: {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'N/A'}</div>
-                        <pre className="text-xs font-mono text-gray-500 overflow-auto mt-3">{item.description}</pre>
+                        <p className="text-xs font-mono text-gray-500 mt-3 whitespace-pre-wrap break-words">{item.description}</p>
                         <div className="mt-4">
                           <a href={item.url || item.link} target="_blank" rel="noopener noreferrer" className={`inline-block font-mono text-xs ${colors.primary} hover:underline`}>View on GitHub</a>
                         </div>
