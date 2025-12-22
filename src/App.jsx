@@ -646,8 +646,15 @@ export default function App() {
 
         const [dataPrev, dataCur] = await Promise.all([fetchRange(fromPrev, toPrev), fetchRange(fromCur, toCur)]);
 
+        // Surface API-level errors
         if (dataPrev?.error) throw new Error(dataPrev.error + (dataPrev.details ? ' - ' + dataPrev.details : ''));
         if (dataCur?.error) throw new Error(dataCur.error + (dataCur.details ? ' - ' + dataCur.details : ''));
+
+        // If the API returned a warning (e.g., MISSING_GITHUB_TOKEN), surface it as an error so production shows the issue
+        if (dataPrev?.warning || dataCur?.warning) {
+          const w = dataPrev?.warning || dataCur?.warning;
+          throw new Error(w);
+        }
 
         // merge contributions (sum counts if duplicate dates, though dates should be unique across years)
         const combined = [...(dataPrev.contributions || []), ...(dataCur.contributions || [])];
