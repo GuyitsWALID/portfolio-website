@@ -1,9 +1,11 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 
-// Show a 1-year heatmap by default and provide better scroll UX + mobile/touch support
+// GitHub-accurate contribution heatmap with custom color support
 export default function ContributionHeatmap({ contributions = [], daysBack = 365, year, vitalColor = '#00FF00', theme = 'dark' }) {
   const containerRef = useRef(null);
   const [winWidth, setWinWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const [hoveredDay, setHoveredDay] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const onResize = () => setWinWidth(window.innerWidth);
@@ -15,13 +17,14 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 365
     const map = new Map(contributions.map(c => [c.date, c.count]));
 
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset to start of today
     let start, end;
 
     if (typeof year === 'number') {
       start = new Date(year, 0, 1);
-      // If selected year is the current year, end at today; otherwise end at Dec 31 of that year
       const currentYear = today.getFullYear();
-      end = year === currentYear ? today : new Date(year, 11, 31);
+      // Always end at today if it's the current year, never show future dates
+      end = year === currentYear ? new Date(today) : new Date(year, 11, 31);
     } else {
       end = new Date(today);
       start = new Date(today);
@@ -30,9 +33,14 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 365
 
     // align start to previous Sunday
     start.setDate(start.getDate() - start.getDay());
-    // align end to next Saturday so the last week is full
-    const endDay = end.getDay();
-    if (endDay !== 6) end.setDate(end.getDate() + (6 - endDay));
+    
+    // For current year, don't align end forward - stop at today
+    // Only align to Saturday for past years
+    const isCurrentYear = typeof year === 'number' && year === today.getFullYear();
+    if (!isCurrentYear) {
+      const endDay = end.getDay();
+      if (endDay !== 6) end.setDate(end.getDate() + (6 - endDay));
+    }
 
     const w = [];
     let cur = new Date(start);
@@ -40,10 +48,19 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 365
       const week = [];
       for (let i = 0; i < 7; i++) {
         const iso = cur.toISOString().slice(0,10);
-        week.push({ date: iso, count: map.get(iso) || 0 });
+        // Only add day if it's not in the future
+        if (cur <= today) {
+          week.push({ date: iso, count: map.get(iso) || 0 });
+        } else {
+          // For incomplete weeks in current year, add placeholder that won't be rendered
+          week.push({ date: iso, count: 0, isFuture: true });
+        }
         cur.setDate(cur.getDate() + 1);
       }
-      w.push(week);
+      // Only add week if it has at least one non-future day
+      if (week.some(d => !d.isFuture)) {
+        w.push(week);
+      }
     }
     return w;
   }, [contributions, daysBack, year]);
@@ -51,51 +68,33 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 365
   // Determine which weeks to display (supports filtering a year by last N days)
   const getDisplayWeeks = () => {
     if (typeof year === 'number' && typeof daysBack === 'number') {
-      // if daysBack >= whole period, just show all weeks
       const totalDays = weeks.length * 7;
       if (daysBack >= totalDays) return weeks;
 
-      // Find end date (last Saturday in weeks array)
       const lastWeek = weeks[weeks.length - 1];
-      const endIso = lastWeek[lastWeek.length - 1].date; // Saturday
+      const endIso = lastWeek[lastWeek.length - 1].date;
       const endDate = new Date(endIso);
 
-      // Compute the start filter date (daysBack days before endDate)
       const startFilter = new Date(endDate);
       startFilter.setDate(startFilter.getDate() - (daysBack - 1));
-      // align to previous Sunday
       startFilter.setDate(startFilter.getDate() - startFilter.getDay());
 
-      // Find first week index whose first day is >= startFilter
       const idx = weeks.findIndex(w => new Date(w[0].date) >= startFilter);
       return idx === -1 ? weeks : weeks.slice(idx);
     }
-    // default: show all computed weeks
     return weeks;
   };
 
   const displayWeeks = getDisplayWeeks();
 
-  // Measure container width to compute responsive square size (no scrollbar)
-  const [containerWidth, setContainerWidth] = useState(0);
-  useEffect(() => {
-    const measure = () => {
-      const el = containerRef.current;
-      if (el) setContainerWidth(el.clientWidth);
-    };
+  // GitHub uses fixed 11px squares (with 3px gap = 14px total per cell)
+  const squareSize = 11;
+  const gap = 3;
 
-    measure();
-    window.addEventListener('resize', measure);
-    let ro;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(measure);
-      if (containerRef.current) ro.observe(containerRef.current);
-    }
-    return () => {
-      window.removeEventListener('resize', measure);
-      if (ro && containerRef.current) ro.unobserve(containerRef.current);
-    };
-  }, []);
+  // Responsive sizing: adapt for small screens
+  const smallScreen = winWidth < 640;
+  const leftLabelWidth = 28; // Fixed width for day labels
+  const dayLabelGap = 8; // Gap between day labels and grid
 
   const flat = displayWeeks.flat();
   const maxCount = Math.max(...flat.map(d => d.count), 1);
@@ -105,35 +104,10 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 365
     ? (displayWeeks.length * 7 < weeks.length * 7 ? `Year ${year} (filtered ${daysBack}d)` : `Year ${year}`)
     : `Last ${daysBack}d`;
 
-  // Responsive sizing: adapt for small screens
-  const smallScreen = winWidth < 640;
-  const gap = smallScreen ? 3 : 4; // gap between columns
-  const leftLabelWidth = smallScreen ? 28 : 40; // day label column (smaller on mobile)
-  const padding = 24; // safety padding
-  const fullWeeksCount = Math.max(1, weeks.length);
+  // Grid content width - fixed based on number of weeks
+  const gridWidth = leftLabelWidth + dayLabelGap + displayWeeks.length * squareSize + Math.max(0, (displayWeeks.length - 1) * gap);
 
-  const squareSize = useMemo(() => {
-    // On small screens, size based on displayed weeks (limited to avoid very tiny tiles)
-    const weeksCountForSizing = smallScreen ? Math.min(displayWeeks.length, 20) : fullWeeksCount;
-    if (!containerWidth) {
-      // fallback heuristic
-      if (winWidth < 480) return 12;
-      if (winWidth < 768) return 10;
-      if (weeksCountForSizing <= 20) return 12;
-      if (weeksCountForSizing <= 40) return 10;
-      if (typeof year === 'number') return 7;
-      return daysBack > 180 ? 8 : 9;
-    }
-    // compute tile size using weeksCountForSizing so mobile keeps legible tiles
-    const available = containerWidth - leftLabelWidth - padding - (weeksCountForSizing - 1) * gap;
-    const s = Math.floor(available / weeksCountForSizing);
-    const size = Math.max(6, Math.min(14, s)); // prefer minimum 6 for readability
-    return size;
-  }, [containerWidth, fullWeeksCount, winWidth, year, daysBack, displayWeeks.length, smallScreen]);
-
-  // Grid content width to align header and ensure no scrollbar - use fixed column widths
-  const gridWidth = leftLabelWidth + displayWeeks.length * squareSize + Math.max(0, (displayWeeks.length - 1) * gap);
-
+  // Color utilities
   const hexToRgb = (hex) => {
     const c = (hex || '#00FF00').replace('#', '');
     return {
@@ -143,143 +117,287 @@ export default function ContributionHeatmap({ contributions = [], daysBack = 365
     };
   };
 
-  const { r, g, b } = hexToRgb(vitalColor);
-
-  const toHsl = ({ r, g, b }) => {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r,g,b), min = Math.min(r,g,b);
-    let h = 0, s = 0, l = (max + min) / 2;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch(max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h = Math.round(h * 60);
-    }
-    return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+  const rgbToHex = ({ r, g, b }) => {
+    const toHex = (v) => v.toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   };
 
-  const hsl = toHsl({ r, g, b });
+  const mixRgb = (a, b, t) => ({
+    r: Math.round(a.r * (1 - t) + b.r * t),
+    g: Math.round(a.g * (1 - t) + b.g * t),
+    b: Math.round(a.b * (1 - t) + b.b * t),
+  });
 
-  // Derive palette from the `vitalColor` so the heatmap follows user selection.
-  // Avoid near-white lightest stops so tiles never appear white
+  // Create 4 color stops matching GitHub's intensity levels
   const palette = useMemo(() => {
-    const base = (vitalColor || '#00FF00').replace('#','').toLowerCase();
-    // Keep GitHub greens when the color is the default neon green for familiarity
-    if (base === '00ff00') return ['#9be9a8', '#40c463', '#30a14e', '#216e39'];
+    const base = (vitalColor || '#00FF00');
+    const baseRgb = hexToRgb(base);
+    
+    // GitHub uses 4 distinct levels with decreasing intensity
+    // Level 1 (lightest): ~25% intensity
+    // Level 2: ~50% intensity  
+    // Level 3: ~75% intensity
+    // Level 4 (darkest): 100% intensity (base color)
+    const stops = [0.75, 0.50, 0.25, 0.0]; // Mix with black for darker shades
+    const black = { r: 0, g: 0, b: 0 };
+    
+    return stops.map(t => rgbToHex(mixRgb(baseRgb, black, t)));
+  }, [vitalColor]);
 
-    // Keep saturation vivid but not extreme, and limit lightness to avoid white
-    const sats = Math.min(90, Math.max(50, hsl.s + 10));
-    // GitHub-like light->dark stops but limited to avoid white
-    let stops = [72, 56, 40, 24];
-    // Slightly darker palette for dark theme so contrast remains visible
-    if (theme === 'dark') stops = stops.map(L => Math.max(18, L - 6));
+  const emptyColor = theme === 'dark' ? '#161b22' : '#ebedf0';
 
-    return stops.map(L => `hsl(${hsl.h} ${sats}% ${L}%)`);
-  }, [hsl, vitalColor, theme]);
-
-  const emptyColor = theme === 'dark' ? '#071023' : '#ebedf0';
-
-  // Compute percentile thresholds from non-zero counts so the palette distribution matches GitHub-like buckets
-  const thresholds = useMemo(() => {
-    const vals = flat.map(d => d.count).filter(c => c > 0).sort((a, b) => a - b);
-    if (!vals.length) return [1, 2, 3, 4];
-    const ps = [0.25, 0.5, 0.75, 0.95];
-    return ps.map(p => vals[Math.min(vals.length - 1, Math.floor((vals.length - 1) * p))]);
+  // Compute min/max of non-zero counts for relative bucket scaling
+  const nonZeroStats = useMemo(() => {
+    const vals = flat.map(d => d.count).filter(c => c > 0);
+    if (!vals.length) return { min: 0, max: 0 };
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    return { min, max };
   }, [flat]);
 
-  const getStyle = (count) => {
-    if (!count) return { backgroundColor: emptyColor, borderRadius: 0 };
+  // GitHub-style intensity calculation: 5 levels (0-4) based on quartiles
+  const getLevelAndColor = (count) => {
+    if (!count) return { level: 0, color: emptyColor };
 
-    // Assign buckets based on thresholds (0..3) mapping to palette indices
-    let idx = 0;
-    if (count >= thresholds[3]) idx = 3;
-    else if (count >= thresholds[2]) idx = 2;
-    else if (count >= thresholds[1]) idx = 1;
-    else if (count >= thresholds[0]) idx = 0;
+    const { min, max } = nonZeroStats;
+    if (max <= 0 || min === max) {
+      // All non-zero values are the same - use level 1 (lightest)
+      return { level: 1, color: palette[0] };
+    }
 
-    const color = palette[Math.max(0, Math.min(palette.length - 1, idx))];
+    // Calculate quartiles for distribution
+    const range = max - min;
+    const normalized = (count - min) / range;
+    
+    // GitHub uses 4 levels for non-zero contributions
+    // Level 1: 0-25%, Level 2: 25-50%, Level 3: 50-75%, Level 4: 75-100%
+    let level;
+    if (normalized <= 0.25) level = 1;
+    else if (normalized <= 0.50) level = 2;
+    else if (normalized <= 0.75) level = 3;
+    else level = 4;
 
-    // Match GitHub appearance: square (no rounding) without inner shadow
-    return { backgroundColor: color, borderRadius: 0 };
+    return { level, color: palette[level - 1] };
   };
 
+  // Format date for tooltip (e.g., "5 contributions on Monday, December 16, 2024")
+  const formatTooltip = (date, count) => {
+    const d = new Date(date + 'T00:00:00'); // Ensure correct timezone
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const formattedDate = d.toLocaleDateString('en-US', options);
+    
+    if (count === 0) {
+      return `No contributions on ${formattedDate}`;
+    } else if (count === 1) {
+      return `1 contribution on ${formattedDate}`;
+    } else {
+      return `${count} contributions on ${formattedDate}`;
+    }
+  };
 
+  const handleMouseEnter = (day, event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredDay(day);
+    setTooltipPos({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredDay(null);
+  };
+
+  const getStyle = (count, isHovered = false) => {
+    const { color } = getLevelAndColor(count);
+    return { 
+      backgroundColor: color, 
+      borderRadius: '2px',
+      border: isHovered ? '1px solid rgba(255, 255, 255, 0.3)' : 'none',
+      transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+      transition: 'all 0.1s ease',
+      zIndex: isHovered ? 10 : 1
+    };
+  };
 
   return (
     <div className={`p-4 rounded-md ${theme === 'dark' ? 'bg-[#001018]/60' : 'bg-white/90'} relative`} ref={containerRef}>
+      {/* Tooltip */}
+      {hoveredDay && (
+        <div
+          style={{
+            position: 'fixed',
+            left: `${tooltipPos.x}px`,
+            top: `${tooltipPos.y}px`,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: theme === 'dark' ? 'rgba(31, 35, 40, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+            color: theme === 'dark' ? '#c9d1d9' : '#24292f',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: 500,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            zIndex: 1000,
+            boxShadow: theme === 'dark' 
+              ? '0 8px 24px rgba(0, 0, 0, 0.5)' 
+              : '0 8px 24px rgba(149, 157, 165, 0.2)',
+            border: theme === 'dark' ? '1px solid rgba(48, 54, 61, 1)' : '1px solid #d0d7de'
+          }}
+        >
+          {formatTooltip(hoveredDay.date, hoveredDay.count)}
+        </div>
+      )}
+      
       <div className="flex items-center justify-between mb-2">
         <div className={`text-xs font-mono ${theme === 'dark' ? 'text-cyan-300' : 'text-[#0b4f4f]'}`}>Contribution Heatmap</div>
       </div>
 
-            <div className="flex flex-col gap-4">
-          <div className="w-full" style={{ paddingBottom: 12 }}>
+      <div className="flex flex-col gap-4">
+        <div className="w-full" style={{ paddingBottom: 12 }}>
           
-            {/* Months header (grid responsive width) */}
-            {/* Make the grid scrollable horizontally when it doesn't fit */}
-            <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 8, scrollSnapType: 'x proximity' }}>
-              <div style={{ width: `${gridWidth}px`, minWidth: `${gridWidth}px`, scrollSnapAlign: 'start' }}>
-                {/* Months header aligned to fixed columns so tile size is consistent */}
-                <div style={{ display: 'grid', gridTemplateColumns: `40px repeat(${displayWeeks.length}, ${squareSize}px)`, gap: `${gap}px`, alignItems: 'center' }}>
-                  <div />
+          {/* Months header (grid responsive width) */}
+          {/* Make the grid scrollable horizontally when it doesn't fit */}
+          <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 4 }}>
+            <div style={{ width: `${gridWidth}px`, minWidth: `${gridWidth}px` }}>
+              {/* Months header aligned to fixed columns */}
+              <div style={{ 
+                display: 'flex',
+                gap: `${dayLabelGap}px`,
+                marginBottom: '8px'
+              }}>
+                {/* Spacer for day labels */}
+                <div style={{ width: `${leftLabelWidth}px` }} />
+                
+                {/* Month labels */}
+                <div style={{ 
+                  display: 'flex', 
+                  gap: `${gap}px`,
+                  width: `${displayWeeks.length * squareSize + (displayWeeks.length - 1) * gap}px`
+                }}>
                   {displayWeeks.map((week, i) => {
-                    const label = new Date(week[0].date).toLocaleString('default', { month: 'short' });
+                    const date = new Date(week[0].date);
+                    const label = date.toLocaleString('default', { month: 'short' });
                     const prevLabel = i > 0 ? new Date(displayWeeks[i - 1][0].date).toLocaleString('default', { month: 'short' }) : null;
+                    
+                    // Only show label if it's the first occurrence of the month AND we have space (at least 2 weeks)
+                    const nextMonthIndex = displayWeeks.findIndex((w, idx) => {
+                      if (idx <= i) return false;
+                      const nextDate = new Date(w[0].date);
+                      return nextDate.toLocaleString('default', { month: 'short' }) !== label;
+                    });
+                    
+                    const weeksInMonth = nextMonthIndex === -1 ? displayWeeks.length - i : nextMonthIndex - i;
+                    const showLabel = (i === 0 || label !== prevLabel) && weeksInMonth >= 2;
+                    
                     return (
-                      <div key={i} style={{ width: `${squareSize}px`, textAlign: 'center', fontSize: 11, color: theme === 'dark' ? 'rgba(99, 219, 237, 0.6)' : '#0b4f4f' }}>
-                        {(i === 0 || label !== prevLabel) ? label : ''}
+                      <div key={i} style={{ 
+                        width: `${squareSize}px`, 
+                        fontSize: '11px',
+                        fontWeight: 400,
+                        color: theme === 'dark' ? 'rgba(139, 148, 158, 1)' : '#57606a',
+                        lineHeight: 1,
+                        textAlign: 'left'
+                      }}>
+                        {showLabel ? label : ''}
                       </div>
                     );
                   })}
                 </div>
+              </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: `40px repeat(${displayWeeks.length}, ${squareSize}px)`, gap: `${gap}px`, alignItems: 'start' }}>
-                  {/* Day labels column (hidden on very small screens for extra space) */}
-                  <div style={{ display: smallScreen ? 'none' : 'flex', flexDirection: 'column', justifyContent: 'space-between', height: `${squareSize * 7 + gap * 6}px` }}>
-                    {Array.from({ length: 7 }).map((_, idx) => (
-                      <div key={idx} style={{ fontSize: 11, color: theme === 'dark' ? 'rgba(99, 219, 237, 0.6)' : '#0b4f4f', height: 'auto' }}>
-                        {idx === 1 ? 'Mon' : idx === 3 ? 'Wed' : idx === 5 ? 'Fri' : ''}
-                      </div>
-                    ))}
-                  </div>
+              {/* Main grid container */}
+              <div style={{ display: 'flex', gap: `${dayLabelGap}px` }}>
+                {/* Day labels column */}
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: `${gap}px`,
+                  width: `${leftLabelWidth}px`,
+                  paddingTop: `${squareSize + gap}px` // Offset to align with first Monday
+                }}>
+                  {['Mon', '', 'Wed', '', 'Fri', '', ''].map((day, idx) => (
+                    <div key={idx} style={{ 
+                      fontSize: '11px',
+                      fontWeight: 400,
+                      color: theme === 'dark' ? 'rgba(139, 148, 158, 1)' : '#57606a',
+                      height: `${squareSize}px`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      lineHeight: 1
+                    }}>
+                      {day}
+                    </div>
+                  ))}
+                </div>
 
-                  {/* Grid: each column is a week, each row is a day */}
-                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${displayWeeks.length}, ${squareSize}px)`, gridAutoRows: `${squareSize}px`, gap: `${gap}px`, width: `${gridWidth - leftLabelWidth}px` }}>
-                    {displayWeeks.map((week, wi) => (
-                      week.map((day, di) => (
-                        <div key={`${day.date}`} style={{ width: `${squareSize}px`, height: `${squareSize}px` }}>
-                          <div
-                            role="img"
-                            aria-label={`${day.date}: ${day.count} commits`}
-                            style={{ width: '100%', height: '100%', ...getStyle(day.count), transition: 'background-color 150ms linear' }}
+                {/* Weeks grid - columns are weeks, rows are days of week */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: `repeat(${displayWeeks.length}, ${squareSize}px)`,
+                  gridTemplateRows: `repeat(7, ${squareSize}px)`,
+                  gap: `${gap}px`,
+                  gridAutoFlow: 'column' // Fill column by column (week by week)
+                }}>
+                  {displayWeeks.map((week, weekIdx) => (
+                    week.map((day, dayIdx) => {
+                      // Don't render future dates
+                      if (day.isFuture) {
+                        return (
+                          <div 
+                            key={day.date}
+                            style={{ 
+                              width: `${squareSize}px`, 
+                              height: `${squareSize}px`,
+                              gridColumn: weekIdx + 1,
+                              gridRow: dayIdx + 1,
+                              visibility: 'hidden'
+                            }}
                           />
-                        </div>
-                      ))
-                    ))}
-                  </div>
-
+                        );
+                      }
+                      
+                      const isHovered = hoveredDay?.date === day.date;
+                      return (
+                        <div 
+                          key={day.date}
+                          role="img"
+                          aria-label={`${day.count} contributions on ${day.date}`}
+                          onMouseEnter={(e) => handleMouseEnter(day, e)}
+                          onMouseLeave={handleMouseLeave}
+                          style={{ 
+                            width: `${squareSize}px`, 
+                            height: `${squareSize}px`,
+                            ...getStyle(day.count, isHovered),
+                            cursor: 'pointer',
+                            gridColumn: weekIdx + 1,
+                            gridRow: dayIdx + 1,
+                            position: 'relative'
+                          }}
+                        />
+                      );
+                    })
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-
-          <div className={`mt-2 text-[11px] ${theme === 'dark' ? 'text-cyan-300' : 'text-gray-600'} flex items-center gap-3 justify-start`}>
-            <span className="font-mono">Low</span>
-            <div className="flex gap-1 items-center">
-              <div style={{ width: 18, height: 12, backgroundColor: emptyColor }} />
-              {palette.map((c, i) => (
-                <div key={i} style={{ width: 18, height: 12, backgroundColor: c }} />
-              ))}
-            </div>
-            <span className="font-mono">High</span>
-          </div>
-
-          {/* Filter caption */}
-          <div className={`mt-1 text-[11px] font-mono ${theme === 'dark' ? 'text-cyan-400/80' : 'text-gray-500'}`}>{headerLabel}</div>
         </div>
+
+        <div className={`mt-2 text-[11px] ${theme === 'dark' ? 'text-[#8b949e]' : 'text-[#57606a]'} flex items-center gap-2 justify-start`}>
+          <span className="font-normal">Less</span>
+          <div className="flex gap-[3px] items-center">
+            <div style={{ width: 11, height: 11, backgroundColor: emptyColor, borderRadius: '2px' }} />
+            {palette.map((c, i) => (
+              <div key={i} style={{ width: 11, height: 11, backgroundColor: c, borderRadius: '2px' }} />
+            ))}
+          </div>
+          <span className="font-normal">More</span>
+        </div>
+
+        {/* Filter caption */}
+        <div className={`mt-1 text-[11px] font-mono ${theme === 'dark' ? 'text-cyan-400/80' : 'text-gray-500'}`}>{headerLabel}</div>
+      </div>
     </div>
   );
 }
